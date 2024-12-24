@@ -2,7 +2,11 @@
 class_name TileMapDual
 extends TileMapLayer
 
+@export var wall_height:float = 1.5
+@export var vpdistance_multiplier:float = 1
+
 @export var world_tilemap: TileMapLayer = null
+@onready var canvas_layer = $"../CanvasLayer"
 ## Click to update the tilemap inside the editor.
 ## Make sure that the Freeze option is not checked!
 @export var update_in_editor: bool = true:
@@ -55,6 +59,45 @@ const NEIGHBOURS_TO_ATLAS: Dictionary = {
 	15: Vector2i(2,1)
 	}
 	
+# Base vertices for calculating the starting point of wall meshes
+const BASE_VERTICES: Dictionary = {
+	0: [Vector2(0,0.5), Vector2(0.5,0.5), Vector2(0.5,1), Vector2(0,1)],
+	1: [Vector2(0.5,0), Vector2(1,0), Vector2(1,1), Vector2(0.5,1)],
+	2: [Vector2(0,0), Vector2(0.5,0), Vector2(0.5,0.5), Vector2(1,1), Vector2(0,1)],
+	3: [Vector2(0,0.5), Vector2(1,0.5), Vector2(1,1), Vector2(0,1)],
+	4: [Vector2(0,0), Vector2(0.5,0), Vector2(0.5,0.5), Vector2(1,0.5), Vector2(1,1), Vector2(0.5,1), Vector2(0.5,0.5), Vector2(0,0.5)],
+	5: [Vector2(0.5,0), Vector2(1,0), Vector2(1,1), Vector2(0,1), Vector2(0,0.5), Vector2(0.5,0.5)],
+	6: [Vector2(0,0), Vector2(1,0), Vector2(1,1), Vector2(0,1)], 			#FULL
+	7: [Vector2(0,0), Vector2(1,0), Vector2(1,0.5), Vector2(0.5,0.5), Vector2(0.5,1), Vector2(0,1)],
+	8: [Vector2(0.5,0), Vector2(1,0), Vector2(1,0.5), Vector2(0.5, 0.5)],
+	9: [Vector2(0,0), Vector2(1,0), Vector2(1,0.5), Vector2(0,0.5)],
+	10: [Vector2(0,0), Vector2(1,0), Vector2(1,1), Vector2(0.5,1), Vector2(0.5,0.5), Vector2(0,0.5)],
+	11: [Vector2(0,0), Vector2(0.5,0), Vector2(0.5,1), Vector2(0,1)],
+	12: [], 																#EMPTY
+	13: [Vector2(0.5,0.5), Vector2(1,0.5), Vector2(1,1), Vector2(0.5,1)],
+	14: [Vector2(0.5,0), Vector2(1,0), Vector2(1,0.5), Vector2(0.5,0.5), Vector2(0.5,1), Vector2(0,1), Vector2(0,0.5), Vector2(0.5,0.5)],
+	15: [Vector2(0,0), Vector2(0.5,0), Vector2(0.5,0.5), Vector2(0,0.5)]
+	}
+
+const BASE_VERTICES_PRIMITIVE_TRI: Dictionary = {
+	0: [Vector2(0,0.5), Vector2(0.5,0.5), Vector2(0.5,1), Vector2(0.5,1), Vector2(0,1), Vector2(0,0.5)],
+	1: [Vector2(0.5,0), Vector2(1,0), Vector2(1,1), Vector2(1,1), Vector2(0.5,1), Vector2(0.5,0)],
+	2: [Vector2(0,0), Vector2(0.5,0), Vector2(0.5,0.5), Vector2(0.5,0.5), Vector2(1,0.5), Vector2(1,1),Vector2(1,1), Vector2(0,1), Vector2(0,0)],
+	3: [Vector2(0,0.5), Vector2(1,0.5), Vector2(1,1), Vector2(1,1), Vector2(0,1), Vector2(0,0.5)],
+	4: [Vector2(0,0), Vector2(0.5,0), Vector2(0.5,0.5), Vector2(0.5,0.5), Vector2(1,0.5), Vector2(1,1), Vector2(1,1), Vector2(0.5,1), Vector2(0.5,0.5), Vector2(0.5,0.5), Vector2(0,0.5), Vector2(0,0)],
+	5: [Vector2(0.5,0.5), Vector2(0.5,0), Vector2(1,0), Vector2(1,0), Vector2(1,1), Vector2(0,1), Vector2(0,1), Vector2(0,0.5), Vector2(0.5,0.5)],
+	6: [Vector2(0,0), Vector2(1,0), Vector2(1,1), Vector2(1,1), Vector2(0,1), Vector2(0,0)], 			#FULL
+	7: [Vector2(0.5,0.5), Vector2(0.5,1), Vector2(0,1), Vector2(0,1), Vector2(0,0), Vector2(1,0), Vector2(1,0), Vector2(1,0.5), Vector2(0.5,0.5)],
+	8: [Vector2(0.5,0), Vector2(1,0), Vector2(1,0.5), Vector2(1,0.5), Vector2(0.5, 0.5), Vector2(0.5,0)],
+	9: [Vector2(0,0), Vector2(1,0), Vector2(1,0.5), Vector2(1,0.5), Vector2(0,0.5), Vector2(0,0)],
+	10: [Vector2(0,0), Vector2(1,0), Vector2(1,1), Vector2(1,1), Vector2(0.5,1), Vector2(0.5,0.5), Vector2(0.5,0.5), Vector2(0,0.5), Vector2(0,0)],
+	11: [Vector2(0,0), Vector2(0.5,0), Vector2(0.5,1), Vector2(0.5,1), Vector2(0,1), Vector2(0,0)],
+	12: [], 																#EMPTY
+	13: [Vector2(0.5,0.5), Vector2(1,0.5), Vector2(1,1), Vector2(1,1), Vector2(0.5,1), Vector2(0.5,0.5)],
+	14: [Vector2(0.5,0.5), Vector2(0.5,1), Vector2(0,1), Vector2(0,1), Vector2(0,0.5), Vector2(0.5,0.5), Vector2(0.5,0.5), Vector2(0.5,0), Vector2(1,0), Vector2(1,0), Vector2(1,0.5), Vector2(0.5,0.5)],
+	15: [Vector2(0,0), Vector2(0.5,0), Vector2(0.5,0.5), Vector2(0.5,0.5), Vector2(0,0.5), Vector2(0,0)]
+	}
+	
 ## Coordinates for the fully-filled tile in the Atlas
 ## that will be used to sketch in the World grid.
 ## Defaults to the one in the standard Godot template.
@@ -71,15 +114,82 @@ var checked_cells: Array = [false]
 ## Keep track of the atlas ID
 var _atlas_id: int
 
+var tile_size = 128;
+
+var orthographic = false;
+
+var height = 1.0
+var vpm = 1.0
+
+func _physics_process(delta: float) -> void:
+	update_3D()
+	if (Input.is_action_just_pressed("switch_view")):
+		if (orthographic):
+			orthographic = false
+		else:
+			orthographic = true
+	
+	if (!orthographic):
+		height = lerp(height, wall_height, 0.5)
+	if (orthographic):
+		height = lerp(height, 1.0, 0.5)
+
 func _ready() -> void:
 	if freeze:
 		return
 	
 	if debug:
 		print('Updating in-game is activated')
-	
+	InputMap.load_from_project_settings()
 	update_tileset()
+	update_3D()
 	
+func update_3D():
+	for n in canvas_layer.get_children():
+		canvas_layer.remove_child(n)
+		n.queue_free()
+	
+	var temp = self.get_used_cells().size()
+	for _world_cell in self.get_used_cells():
+		var c = self.get_cell_atlas_coords(_world_cell)
+		var _atlas = c.x + c.y * 4
+		if (_atlas != -1):
+			var m = MeshInstance2D.new()
+			var vertices = PackedVector2Array()
+			for vert in BASE_VERTICES_PRIMITIVE_TRI[_atlas]:
+				vertices.push_back(vert * tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64))
+			var count = vertices.size()
+			var pos = $"../Camera2D".position*vpm
+			for i in range(0,count):
+				vertices.push_back((vertices[i] - pos) * height + pos)
+			
+			var arr = BASE_VERTICES[_atlas]
+			for i in range(0, arr.size()-1):
+				vertices.push_back(arr[i]* tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64))
+				vertices.push_back(arr[i+1]* tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64))
+				vertices.push_back((arr[i] * tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64) - pos) * height + pos)
+				vertices.push_back((arr[i] * tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64) - pos) * height + pos)
+				vertices.push_back((arr[i+1] * tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64) - pos) * height + pos)
+				vertices.push_back(arr[i+1]* tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64))
+			vertices.push_back(arr[arr.size()-1]* 	tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64))
+			vertices.push_back(arr[0]* 				tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64))
+			vertices.push_back((arr[arr.size()-1] * tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64) - pos) * height + pos)
+			vertices.push_back((arr[arr.size()-1] * tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64) - pos) * height + pos)
+			vertices.push_back((arr[0] * 			tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64) - pos) * height + pos)
+			vertices.push_back(arr[0]* 	tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64))
+
+			# Initialize the ArrayMesh.
+			var arr_mesh = ArrayMesh.new()
+			var arrays = []
+			arrays.resize(Mesh.ARRAY_MAX)
+			arrays[Mesh.ARRAY_VERTEX] = vertices
+
+			# Create the Mesh.
+			arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+			m.mesh = arr_mesh
+			m.texture = Texture2D.new()
+			m.set_modulate(Color(0.5,0.5,0.5))
+			canvas_layer.add_child(m)
 
 ## Update the entire tileset resource from the dual grid.
 ## Copies the tileset resource from the world grid,
@@ -110,6 +220,7 @@ func _update_tiles() -> void:
 	
 	self.clear()
 	checked_cells = [true]
+	var temp = world_tilemap.get_used_cells().size()
 	for _world_cell in world_tilemap.get_used_cells():
 		if _is_world_tile_sketched(_world_cell):
 			update_tile(_world_cell)
@@ -184,7 +295,7 @@ func _is_world_tile_sketched(_world_cell: Vector2i) -> bool:
 		if Vector2(_atlas_coords) == Vector2(-1,-1):
 			if debug:
 				print('      World cell ' + str(_world_cell) + ' Is EMPTY')
-			return false
+			return true
 		if debug:
 			print('      World cell ' + str(_world_cell) + ' Is NOT sketched with atlas coords ' + str(_atlas_coords))
 		return false
