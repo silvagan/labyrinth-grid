@@ -3,13 +3,12 @@ class_name TileMapDual
 extends TileMapLayer
 
 @export var wall_height:float = 1.5
-@export var vpdistance_multiplier:float = 1
 
 @export var world_tilemap: TileMapLayer = null
 @onready var canvas_layer = $"../CanvasLayer"
 ## Click to update the tilemap inside the editor.
 ## Make sure that the Freeze option is not checked!
-@export var update_in_editor: bool = true:
+@export var update_in_editor: bool = false:
 	set(value):
 		update_tileset()
 ## Clean all the drawn tiles from the TileMapDual node.
@@ -21,6 +20,8 @@ extends TileMapLayer
 @export var freeze: bool = false
 ## Print debug messages. Lots of them.
 @export var debug: bool = false
+
+@onready var image = preload("res://wall.png")
 
 enum location {
 	TOP_LEFT  = 1,
@@ -63,7 +64,7 @@ const NEIGHBOURS_TO_ATLAS: Dictionary = {
 const BASE_VERTICES: Dictionary = {
 	0: [Vector2(0,0.5), Vector2(0.5,0.5), Vector2(0.5,1), Vector2(0,1)],
 	1: [Vector2(0.5,0), Vector2(1,0), Vector2(1,1), Vector2(0.5,1)],
-	2: [Vector2(0,0), Vector2(0.5,0), Vector2(0.5,0.5), Vector2(1,1), Vector2(0,1)],
+	2: [Vector2(0,0), Vector2(0.5,0), Vector2(0.5,0.5), Vector2(1,0.5), Vector2(1,1), Vector2(0,1)],
 	3: [Vector2(0,0.5), Vector2(1,0.5), Vector2(1,1), Vector2(0,1)],
 	4: [Vector2(0,0), Vector2(0.5,0), Vector2(0.5,0.5), Vector2(1,0.5), Vector2(1,1), Vector2(0.5,1), Vector2(0.5,0.5), Vector2(0,0.5)],
 	5: [Vector2(0.5,0), Vector2(1,0), Vector2(1,1), Vector2(0,1), Vector2(0,0.5), Vector2(0.5,0.5)],
@@ -98,6 +99,43 @@ const BASE_VERTICES_PRIMITIVE_TRI: Dictionary = {
 	15: [Vector2(0,0), Vector2(0.5,0), Vector2(0.5,0.5), Vector2(0.5,0.5), Vector2(0,0.5), Vector2(0,0)]
 	}
 	
+const BASE_VERTICES_ONLY_OUTER: Dictionary = {
+	0: [[Vector2(0,0.5), Vector2(0.5,0.5), Vector2(0.5,1)]],
+	1: [[Vector2(0.5,0), Vector2(0.5,1)]],
+	2: [[Vector2(0.5,0), Vector2(0.5,0.5), Vector2(1,0.5)]],
+	3: [[Vector2(0,0.5), Vector2(1,0.5)]],
+	4: [[Vector2(0.5,0), Vector2(0.5,0.5), Vector2(0,0.5)] , [Vector2(0.5,0), Vector2(0.5,0.5), Vector2(1, 0.5)]],
+	5: [[Vector2(0.5,0), Vector2(0.5,0.5), Vector2(0,0.5)]],
+	6: [[]], 			#FULL
+	7: [[Vector2(1,0.5), Vector2(0.5,0.5), Vector2(0.5,1)]],
+	8: [[Vector2(0.5,0), Vector2(0.5, 0.5), Vector2(1,0.5)]],
+	9: [[Vector2(0,0.5), Vector2(1,0.5)]],
+	10: [[Vector2(0,0.5), Vector2(0.5,0.5), Vector2(0.5,1)]],
+	11: [[Vector2(0.5,0), Vector2(0.5,1)]],
+	12: [[]], 																#EMPTY
+	13: [[Vector2(1,0.5), Vector2(0.5,0.5), Vector2(0.5,1)]],
+	14: [[Vector2(0.5,0), Vector2(0.5,0.5), Vector2(1, 0.5)] , [Vector2(0.5,0), Vector2(0.5,0.5), Vector2(0.5, 1)]],
+	15: [[Vector2(0.5,0), Vector2(0.5,0.5), Vector2(0,0.5)]]
+	}
+const CENTER_COORDS: Dictionary = {
+	0: [Vector2(0.25,0.75)],
+	1: [Vector2(0.75, 0.5)],
+	2: [Vector2(0.25,0.75)],
+	3: [Vector2(0.5, 0.75)],
+	4: [Vector2(0.25, 0.25), Vector2(0.75, 0.75)],
+	5: [Vector2(0.75,0.75)],
+	6: [], 			#FULL
+	7: [Vector2(0.25,0.25)],
+	8: [Vector2(0.75,0.25)],
+	9: [Vector2(0.5, 0.25)],
+	10: [Vector2(0.75,0.25)],
+	11: [Vector2(0.25, 0.5)],
+	12: [], 																#EMPTY
+	13: [Vector2(0.75, 0.75)],
+	14: [Vector2(0.75, 0.25), Vector2(0.25, 0.75)],
+	15: [Vector2(0.25, 0.25)]
+	}
+	
 ## Coordinates for the fully-filled tile in the Atlas
 ## that will be used to sketch in the World grid.
 ## Defaults to the one in the standard Godot template.
@@ -118,21 +156,9 @@ var tile_size = 128;
 
 var orthographic = false;
 
-var height = 1.0
-var vpm = 1.0
+var height : float = wall_height
 
-func _physics_process(delta: float) -> void:
-	update_3D()
-	if (Input.is_action_just_pressed("switch_view")):
-		if (orthographic):
-			orthographic = false
-		else:
-			orthographic = true
-	
-	if (!orthographic):
-		height = lerp(height, wall_height, 0.5)
-	if (orthographic):
-		height = lerp(height, 1.0, 0.5)
+var tile_mesh_data
 
 func _ready() -> void:
 	if freeze:
@@ -141,55 +167,142 @@ func _ready() -> void:
 	if debug:
 		print('Updating in-game is activated')
 	InputMap.load_from_project_settings()
+	tile_mesh_data = {}
 	update_tileset()
-	update_3D()
+	create_3D()
 	
-func update_3D():
+	self.navigation_enabled = false
+	$"../TileMapLayer".navigation_enabled = false
+	$"../NavigationRegion2D".navigation_polygon.agent_radius = 300
+
+func _physics_process(_delta: float) -> void:
+	update_3D()
+	if (update_in_editor):
+		return
+	if (Input.is_action_just_pressed("switch_view")):
+		if (orthographic):
+			orthographic = false
+		else:
+			orthographic = true
+	
+	if (Input.is_action_just_pressed("walls_up")):
+		wall_height += 0.2
+	if (Input.is_action_just_pressed("walls_down")):
+		wall_height -= 0.2
+		if wall_height < 1:
+			wall_height = 1
+	
+	if (!orthographic):
+		height = lerp(height, wall_height, 0.2)
+	if (orthographic):
+		height = lerp(height, 1.0, 0.2)
+		
+	
+#add two triangles that constitute a wall that would curve toward the vanishing point (camera pos)
+func add_wall(v0, v1, all_vertices, all_uvs, c, tile_pos, cam_pos):
+	var top0 : Vector2 = (v0 * tile_size + Vector2(tile_pos * tile_size) - Vector2(64, 64) - cam_pos) * height + cam_pos
+	var top1 : Vector2 = (v1 * tile_size + Vector2(tile_pos * tile_size) - Vector2(64, 64) - cam_pos) * height + cam_pos
+	var bottom0 : Vector2 = v0 * tile_size + Vector2(tile_pos * tile_size) - Vector2(64, 64)
+	var bottom1 : Vector2 = v1 * tile_size + Vector2(tile_pos * tile_size) - Vector2(64, 64)
+	var center : Vector2 = c * tile_size + Vector2(tile_pos * tile_size) - Vector2(64, 64)
+	
+	var cdist = abs(center-cam_pos)
+	var b0dist = abs(bottom0-cam_pos)
+	var b1dist = abs(bottom1-cam_pos)
+	
+	if (((b0dist.x >= cdist.x) || (b1dist.x >= cdist.x)) && ((b0dist.y >= cdist.y) || (b1dist.y >= cdist.y))):
+		return
+	
+	all_vertices.push_back(top0)
+	all_vertices.push_back(top1)
+	all_vertices.push_back(bottom0)
+	all_vertices.push_back(top1)
+	all_vertices.push_back(bottom0)
+	all_vertices.push_back(bottom1)
+	all_uvs.push_back(Vector2(0,0))
+	all_uvs.push_back(Vector2(1,0))
+	all_uvs.push_back(Vector2(0,1))
+	all_uvs.push_back(Vector2(1,0))
+	all_uvs.push_back(Vector2(0,1))
+	all_uvs.push_back(Vector2(1,1))
+	
+func add_base(form, all_vertices, tile_pos, cam_pos = Vector2(0, 0), height_mult:float = 1.0):
+	for vert in BASE_VERTICES_PRIMITIVE_TRI[form]:
+		all_vertices.push_back((vert * tile_size + Vector2(tile_pos * tile_size) - Vector2(64, 64) - cam_pos) * height_mult + cam_pos)
+	
+# Storing mesh for a specific tile
+func create_3D():
 	for n in canvas_layer.get_children():
 		canvas_layer.remove_child(n)
 		n.queue_free()
 	
-	var temp = self.get_used_cells().size()
 	for _world_cell in self.get_used_cells():
 		var c = self.get_cell_atlas_coords(_world_cell)
 		var _atlas = c.x + c.y * 4
 		if (_atlas != -1):
 			var m = MeshInstance2D.new()
+			var uvs = PackedVector2Array()
 			var vertices = PackedVector2Array()
-			for vert in BASE_VERTICES_PRIMITIVE_TRI[_atlas]:
-				vertices.push_back(vert * tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64))
-			var count = vertices.size()
-			var pos = $"../Camera2D".position*vpm
-			for i in range(0,count):
-				vertices.push_back((vertices[i] - pos) * height + pos)
+			var pos = $"../Camera2D".position
 			
-			var arr = BASE_VERTICES[_atlas]
-			for i in range(0, arr.size()-1):
-				vertices.push_back(arr[i]* tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64))
-				vertices.push_back(arr[i+1]* tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64))
-				vertices.push_back((arr[i] * tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64) - pos) * height + pos)
-				vertices.push_back((arr[i] * tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64) - pos) * height + pos)
-				vertices.push_back((arr[i+1] * tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64) - pos) * height + pos)
-				vertices.push_back(arr[i+1]* tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64))
-			vertices.push_back(arr[arr.size()-1]* 	tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64))
-			vertices.push_back(arr[0]* 				tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64))
-			vertices.push_back((arr[arr.size()-1] * tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64) - pos) * height + pos)
-			vertices.push_back((arr[arr.size()-1] * tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64) - pos) * height + pos)
-			vertices.push_back((arr[0] * 			tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64) - pos) * height + pos)
-			vertices.push_back(arr[0]* 	tile_size + Vector2(_world_cell * tile_size) - Vector2(64, 64))
-
-			# Initialize the ArrayMesh.
-			var arr_mesh = ArrayMesh.new()
-			var arrays = []
-			arrays.resize(Mesh.ARRAY_MAX)
-			arrays[Mesh.ARRAY_VERTEX] = vertices
-
-			# Create the Mesh.
-			arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-			m.mesh = arr_mesh
-			m.texture = Texture2D.new()
-			m.set_modulate(Color(0.5,0.5,0.5))
-			canvas_layer.add_child(m)
+			##base
+			#add_base(_atlas, vertices, _world_cell)
+			#base_elevated
+			add_base(_atlas, vertices, _world_cell, pos, height)
+			
+			#walls
+			#var arr = BASE_VERTICES_ONLY_OUTER[_atlas]
+			#for connection in arr:
+				#for i in range(0, connection.size()-1):
+					#add_wall(connection[i], connection[i+1], vertices, uvs, centers[i], _world_cell, pos)
+			
+			if vertices.size() > 0:
+				# Initialize the ArrayMesh.
+				var arr_mesh = ArrayMesh.new()
+				var arrays = []
+				arrays.resize(Mesh.ARRAY_MAX)
+				arrays[Mesh.ARRAY_VERTEX] = vertices
+				arrays[ArrayMesh.ARRAY_TEX_UV] = vertices
+				# Create the Mesh.
+				arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+				m.mesh = arr_mesh
+				m.texture = image
+				#$"../test".texture = load("res://grass_path_tileset.png")
+				#m.set_modulate(Color(0.5,0.5,0.5))
+				tile_mesh_data[Vector2(_world_cell)] = m
+				canvas_layer.add_child(m)
+	
+# Storing mesh for a specific tile
+func update_3D():
+	for _world_cell in self.get_used_cells():
+		var c = self.get_cell_atlas_coords(_world_cell)
+		var _atlas = c.x + c.y * 4
+		if (_atlas != -1):
+			var vertices = PackedVector2Array()
+			var uvs = PackedVector2Array()
+			var pos = $"../Camera2D".position
+			
+			#base
+			#add_base(_atlas, vertices, _world_cell)
+			#base_elevated
+			#if (vertices.size() <6):
+				#print("bro where are you going")
+			#walls
+			var arr = BASE_VERTICES_ONLY_OUTER[_atlas]
+			var centers = CENTER_COORDS[_atlas]
+			for i in range(0, arr.size()):
+				for j in range(0, arr[0].size()-1):
+					add_wall(arr[0][j], arr[0][j+1], vertices, uvs, centers[i], _world_cell, pos)
+			add_base(_atlas, vertices, _world_cell, pos, height)
+			if vertices.size() > 0:
+				var arrays = []
+				arrays.resize(Mesh.ARRAY_MAX)
+				arrays[Mesh.ARRAY_VERTEX] = vertices
+				for uv in BASE_VERTICES_PRIMITIVE_TRI[_atlas]:
+					uvs.append(uv)
+				arrays[ArrayMesh.ARRAY_TEX_UV] = uvs
+				tile_mesh_data[(Vector2(_world_cell))].mesh = ArrayMesh.new()
+				tile_mesh_data[(Vector2(_world_cell))].mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 
 ## Update the entire tileset resource from the dual grid.
 ## Copies the tileset resource from the world grid,
@@ -220,7 +333,6 @@ func _update_tiles() -> void:
 	
 	self.clear()
 	checked_cells = [true]
-	var temp = world_tilemap.get_used_cells().size()
 	for _world_cell in world_tilemap.get_used_cells():
 		if _is_world_tile_sketched(_world_cell):
 			update_tile(_world_cell)
@@ -312,7 +424,6 @@ func fill_tile(world_cell, atlas_id=0) -> void:
 	
 	world_tilemap.set_cell(world_cell, atlas_id, full_tile)
 	update_tile(world_cell)
-
 
 ## Public method to erase a tile in a given World cell
 func erase_tile(world_cell, atlas_id=0) -> void:

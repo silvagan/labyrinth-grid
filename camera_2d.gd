@@ -1,11 +1,40 @@
 extends Camera2D
 
+
+var velocity: Vector2 = Vector2(0,0)
+
 func _process(delta):
+	#vertical movement
 	if (Input.is_action_pressed("camera_up")):
-		self.position.y += -500* delta
-	if (Input.is_action_pressed("camera_left")):
-		self.position.x += -500* delta
+		if(velocity.y > 0):
+			velocity.y = lerpf(velocity.y, 0, delta*6)
+			velocity.y -= 20*delta
+		else:
+			velocity.y -= 40*delta
 	if (Input.is_action_pressed("camera_down")):
-		self.position.y += 500* delta
+		if(velocity.y < 0):
+			velocity.y = lerpf(velocity.y, 0, delta*6)
+			velocity.y += 20*delta
+		else:
+			velocity.y += 40*delta
+	elif (!Input.is_action_pressed("camera_up")):
+		velocity.y = lerpf(velocity.y, 0, delta)
+		
+	#horizontal movement
+	if (Input.is_action_pressed("camera_left")):
+		if(velocity.x > 0):
+			velocity.x = lerpf(velocity.x, 0, delta*6)
+			velocity.x -= 20*delta
+		else:
+			velocity.x -= 40*delta
 	if (Input.is_action_pressed("camera_right")):
-		self.position.x += 500 * delta
+		if(velocity.x < 0):
+			velocity.x = lerpf(velocity.x, 0, delta*6)
+			velocity.x += 20*delta
+		else:
+			velocity.x += 40*delta
+	elif (!Input.is_action_pressed("camera_left")):
+		velocity.x = lerpf(velocity.x, 0, delta)
+	
+	#update position according to velocity
+	self.position += velocity*delta*100
